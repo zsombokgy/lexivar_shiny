@@ -1,0 +1,25 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1565918062563.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "402429513",
+    "id" : "E3F401F5",
+    "lastKnownWriteTime" : 1565920898,
+    "last_content_update" : 1565920898767,
+    "path" : "~/Dropbox/Research/RStudio/04-ChapterFOUR.Rmd",
+    "project_path" : null,
+    "properties" : {
+        "cursorPosition" : "199,0",
+        "scrollLine" : "195"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

@@ -5,13 +5,15 @@
     "dirty" : false,
     "encoding" : "UTF-8",
     "folds" : "",
-    "hash" : "3516657941",
+    "hash" : "0",
     "id" : "F12CD2D8",
-    "lastKnownWriteTime" : 1565916703,
-    "last_content_update" : 1565916703,
+    "lastKnownWriteTime" : 1565918083,
+    "last_content_update" : 1565918083006,
     "path" : "~/Dropbox/Github/lexivar_shiny/app.R",
     "project_path" : "app.R",
     "properties" : {
+        "cursorPosition" : "19,13",
+        "scrollLine" : "8"
     },
     "read_only" : false,
     "read_only_alternatives" : [

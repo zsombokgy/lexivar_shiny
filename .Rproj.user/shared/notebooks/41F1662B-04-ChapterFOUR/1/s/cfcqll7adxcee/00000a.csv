@@ -1,0 +1,19 @@
+"0","hashtag2 <- hashtag %>%
+  mutate(date = floor_date(date, ""week""),
+         time = factor(as.numeric(difftime(date, min(date), units = ""weeks"")),
+           levels = c(0:365)),
+         time = as.numeric(as.character(time)),
+         influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(time, borrow_type, city) %>%
+  group_by(time, borrow_type, city) %>%
+  count() %>%
+  spread(borrow_type, n) %>%
+  filter(!is.na(city)) %>%
+  mutate(english = replace_na(english, 0),
+         prescribed = replace_na(prescribed, 0),
+         percentage = prescribed / (english + prescribed)) %>%
+  full_join(cities2, by = ""city"")
+"
+"2","NaNs produced"
+"2","Column `city` joining factors with different levels, coercing to character vector"

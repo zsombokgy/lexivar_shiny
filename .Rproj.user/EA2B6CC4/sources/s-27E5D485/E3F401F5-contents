@@ -1,0 +1,1481 @@
+---
+title: "ZsGy-ArticleTwitter-Markdown"
+author: "Gyula Zsombok"
+date: "1/10/2019"
+output: html_document
+---
+##Libraries
+* `readxl` to import data
+* `tidyr` to create tidy data
+* `dplyr` to manipulate data
+* `lubridate` to manipulate dates
+* `ggmap` to import and visualize map
+* `ggplot2` to plot data
+* `ggrepel` to manipulate text on plots
+* `RColorBrewer` to adjust colors
+
+```{r library, message = FALSE, warning = FALSE}
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(ggmap)
+library(ggrepel)
+library(RColorBrewer)
+library(gridExtra)
+library(mgcv)
+library(visreg)
+```
+
+
+##Loading the map
+
+First, register API key in order to be able to download Google maps.
+
+Then, load in maps for metropolitan France and its overseas territories. I do not need textual information on the map, so the `style` is adjusted accordingly.
+
+Afterwards, I create a layout matrix for the plot where metropolitan France with the most cities is the largest map on the top, while the overseas territories with 1 or 2 cities are on the bottom of the plot.
+
+Finally, I create a dataframe with the geocodes of each city. Since some cities share their names with others outside of France, I specify the country, then remove it in the later step. I save the dataframe as `cities`, so that I don't need to process it every time (it is time consuming.)
+
+```{r load maps and cities, message = FALSE, warning = FALSE}
+register_google(key = "AIzaSyDl1GQTJa_0SZsnEaWICNxinF5bQlt7G54")
+
+france <- get_googlemap(center = c(lon = 2, lat = 47), zoom = 6, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+corsica <- get_googlemap("Corsica", zoom = 8, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+reunion <- get_googlemap("La Réunion, France", zoom = 10, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+mayotte <- get_googlemap("Mayotte, France", zoom = 10, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+guadeloupe <- get_googlemap("Guadeloupe, France", zoom = 10, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+martinique <- get_googlemap("Martinique, France", zoom = 10, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+guyanefr <- get_googlemap("Guyane Francaise, France", zoom = 8, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+quebec <- get_googlemap(center = c(lon = -72.5, lat = 47), zoom = 6, maptype = "terrain", style = "feature:all|element:labels|visibility:off") %>% ggmap()
+
+laymatx <- rbind(c(1,1,1,1,1,1),
+                 c(1,1,1,1,1,1),
+                 c(1,1,1,1,1,1),
+                 c(1,1,1,1,1,1),
+                 c(1,1,1,1,1,1),
+                 c(1,1,1,1,1,1),
+                 c(2,3,4,5,6,7))
+```
+
+```{r twitter dataframe, message = FALSE, warning = FALSE}
+#twitter_import <- read_excel("/Users/gyuszi/Dropbox/Research/Twitter/02 PhD Research/twitter_corpus.xlsx")
+
+#cities <- twitter_import %>% select(city, region) %>%
+#  mutate(city = as.factor(city),
+#         region = as.factor(region)) %>%
+#  group_by(region, city) %>%
+#  count() %>%
+#  filter(!is.na(city), !is.na(region)) %>%
+#  unite("city", c("city","region"), sep = ", ") %>%
+#  mutate(city = paste(city, "France", sep = ", "),
+#         city = as.factor(city)) %>%
+#  filter(city != "Paris, Haute-Normandie, France", city != "Paris, Picardie, #France", city != "Rouen, Centre, France") %>%
+#  mutate(city = as.character(city)) %>%
+#  mutate_geocode(city) %>%
+#  separate(city, c("city","region","country"), sep = ", ") %>%
+#  mutate( city = relevel(as.factor(city), ref = "Paris")) %>%
+#  select(city, region, country, lon, lat)
+#population <- read_excel("/Users/gyuszi/Dropbox/Research/Twitter/02 PhD #Research/france_geodata.xlsx") %>%
+#  select(city, pop_2010) %>%
+#  mutate(city = relevel(as.factor(city), ref = "Paris"))
+#cities <- cities %>%
+#  full_join(population, by = "city") %>%
+#  rename(population = pop_2010)
+#save(cities, file = "cities.Rda")
+load("cities.Rda")
+```
+
+##Creating the data set
+
+First, import dataset with `readxl` and save it as `twitter_import`.
+
+Second, create a dataframe `twitter_df` and assign appropriate classes for each used variables.
+
+Finally, join `twitter_df` with `cities`, so that all city has a geocode assigned to it. Save the dataframe to save time next time I load it in R.
+
+
+```{r import data, message = FALSE, warning = FALSE}
+#twitter_df <- twitter_import %>%
+#  select(lexical, borrow_type, date, content, author, country, region, city, #sentiment, klout, gender, posts, followers, following)
+
+#twitter_df$date <- ymd_hms(twitter_df$date)
+#twitter_df$author <- as.factor(twitter_df$author)
+#twitter_df$borrow_type <- as.factor(twitter_df$borrow_type)
+#twitter_df$lexical <- as.factor(twitter_df$lexical)
+#twitter_df$country <- as.factor(twitter_df$country)
+#twitter_df$region <- as.factor(twitter_df$region)
+#twitter_df$city <- relevel(as.factor(twitter_df$city), ref = "Paris")
+#twitter_df$sentiment <- as.factor(ordered(twitter_df$sentiment,
+#                                  levels=c('Basic Negative',
+#                                           'Basic Neutral',
+#                                           'Basic Positive')))
+#twitter_df$sentiment <- recode(twitter_df$sentiment,
+#                           'Basic Negative' = "negative",
+#                          'Basic Neutral' = "neutral",
+#                          'Basic Positive' = "positive")
+#twitter_df$klout <- as.numeric(as.character(twitter_df$klout))
+#twitter_df$gender <- relevel(as.factor(twitter_df$gender), ref = "M")
+#cities2 <- cities %>% select(city, lon, lat, population)
+#twitter_df <- twitter_df %>% full_join(cities2, by = "city")
+#twitter_df <- twitter_df %>%
+#  mutate(borrow_type = recode(borrow_type,
+#                              prescribed = "prescribed",
+#                              alternative = "english",
+#                              english = "english"),
+#         citysize = ifelse(population > 2000000, 8,
+#                           ifelse(population > 200000, 7,
+#                                  ifelse(population > 100000, 6,
+#                                         ifelse(population > 50000, 5,
+#                                                ifelse(population > 20000, 4,
+#                                                       ifelse(population > 10000, 3,
+#                                                              ifelse(population > 5000, 2,
+#                                                                     ifelse(population > 2000, 1, #0)))))))),
+#         citysize = as.factor(ordered(citysize)))
+
+#save(twitter_df, file = "twitter_df.Rda")
+load("twitter_df.Rda")
+```
+
+Separate dataset based on the four lexical items.
+
+```{r separate dataframes, warning = FALSE, message = FALSE}
+hashtag <- twitter_df %>%
+  filter(lexical == "hashtag", date > ymd_hms("2012-07-06 00:00:00"))
+
+cloud <- twitter_df %>%
+  filter(lexical == "cloud")
+
+email <- twitter_df %>%
+  filter(lexical == "email")
+
+trailer <- twitter_df %>%
+  filter(lexical == "trailer")
+```
+
+```{r journal twitter, message = FALSE, warning = FALSE}
+journal_accounts <- c("@lemonde_inter","@lemonde_pol","@lemondefr","@lemondefr_live","@Madamefigaro","@Le_Figaro","@FigaroTech","@Figaro_Etudiant","@Figaro_Culture","@LaCroix","@LeParisienTV","@LeParisienMonde","@LeParisien_95","@LeParisien_92","@LeParisien_91","@LeParisien_75","@LeParisien_60","@le_Parisien_fr","@le_Parisien","@LesEchosLive","@LesEchos","@EchosStart","@EchosMonde","@EchosFinance","@echosdoc","@ECHOS_ETUDES","@CercleLesEchos","@JDNebusiness","@journaldunet","@01netTV","@01net")
+
+journal_twitter <- twitter_df %>%
+  filter(author %in% journal_accounts) %>%
+  select(lexical, borrow_type, author, content) %>%
+  mutate(journal = ifelse(author %in% c("@lemonde_inter","@lemonde_pol","@lemondefr","@lemondefr_live"), "Le Monde",
+                          ifelse(author %in% c("@Madamefigaro","@Le_Figaro","@FigaroTech","@Figaro_Etudiant","@Figaro_Culture"), "Le Figaro",
+                                 ifelse(author %in% c("@LaCroix"), "La Croix",
+                                        ifelse(author %in% c("@LeParisienTV","@LeParisienMonde","@LeParisien_95","@LeParisien_92","@LeParisien_91","@LeParisien_75","@LeParisien_60","@le_Parisien_fr","@le_Parisien"), "Le Parisien",
+                                               ifelse(author %in% c("@LesEchosLive","@LesEchos","@EchosStart","@EchosMonde","@EchosFinance","@echosdoc","@ECHOS_ETUDES","@CercleLesEchos"), "Les Echos",
+                                                      ifelse(author %in% c("@JDNebusiness","@journaldunet"), "Journal du Net", "01Net")))))),
+         lexical = recode(lexical, "cloud" = "nuage",
+                          "email" = "courriel",
+                          "trailer" = "bande-annonce",
+                          "hashtag" = "mot-dièse"),
+         borrow_type = recode(borrow_type, "english" = "Anglicism")) %>%
+  group_by(journal, borrow_type) %>%
+  summarize(n = n()) %>%
+  spread(borrow_type, n)
+```
+###GAM for the hashtag data
+
+```{r prepare hashtag gam, message = FALSE, warning = FALSE}
+hashtag2 <- hashtag %>%
+  mutate(date = floor_date(date, "week"),
+         time = factor(as.numeric(difftime(date, min(date), units = "weeks")),
+           levels = c(0:365)),
+         time = as.numeric(as.character(time)),
+         influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(time, borrow_type, populationsize, gender, influence)
+```
+
+```{r}
+hashtag2 <- hashtag %>%
+  mutate(date = floor_date(date, "week"),
+         time = factor(as.numeric(difftime(date, min(date), units = "weeks")),
+           levels = c(0:365)),
+         time = as.numeric(as.character(time)),
+         influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(time, borrow_type, city) %>%
+  group_by(time, borrow_type, city) %>%
+  count() %>%
+  spread(borrow_type, n) %>%
+  filter(!is.na(city)) %>%
+  mutate(english = replace_na(english, 0),
+         prescribed = replace_na(prescribed, 0),
+         percentage = prescribed / (english + prescribed)) %>%
+  full_join(cities2, by = "city")
+
+cities2 <- cities %>%
+  filter(country == "France") %>%
+  select(city, lon, lat) %>%
+  mutate(city = relevel(as.factor(city), ref = "Paris"))
+```
+
+```{r hashtag gam2, message = FALSE, warning =  FALSE}
+hashtag_gam <- gam(borrow_type ~ s(time, k = 30) +
+                   s(populationsize, k = 10) +
+                   s(influence, by = gender, k = 20) +
+                   gender,
+                 family = "binomial", method = "REML",
+                 data = hashtag2)
+```
+
+```{r prepare email gam, message = FALSE, warning = FALSE}
+email2 <- email %>%
+  mutate(date = floor_date(date, "week"),
+         time = factor(as.numeric(difftime(date, min(date), units = "weeks")),
+           levels = c(0:365)),
+         time = as.numeric(as.character(time)),
+         influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(time, borrow_type, populationsize, gender, influence)
+```
+
+```{r email gam, message = FALSE, warning =  FALSE}
+email_gam <- gam(borrow_type ~ s(time, k = 30) +
+                   s(populationsize, k = 10) +
+                   s(influence, by = gender, k = 20) +
+                   gender,
+                 family = "binomial", method = "REML",
+                 data = email2)
+```
+
+```{r prepare cloud gam, message = FALSE, warning = FALSE}
+cloud2 <- cloud %>%
+  mutate(date = floor_date(date, "week"),
+         time = factor(as.numeric(difftime(date, min(date), units = "weeks")),
+           levels = c(0:365)),
+         time = as.numeric(as.character(time)),
+         influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(time, borrow_type, city, populationsize, gender, influence, population)
+```
+
+```{r cloud gam, message = FALSE, warning =  FALSE}
+cloud_gam <- gam(borrow_type ~ s(time, k = 30) +
+                   s(populationsize, k = 10) +
+                   s(influence, by = gender, k = 20) +
+                   gender,
+                 family = "binomial", method = "REML",
+                 data = cloud2)
+```
+
+```{r prepare trailer gam, message = FALSE, warning = FALSE}
+trailer2 <- trailer %>%
+  mutate(date = floor_date(date, "week"),
+         time = factor(as.numeric(difftime(date, min(date), units = "weeks")),
+           levels = c(0:365)),
+         time = as.numeric(as.character(time)),
+         influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(time, borrow_type, populationsize, gender, influence)
+```
+
+```{r trailer gam, message = FALSE, warning =  FALSE}
+trailer_gam <- gam(borrow_type ~ s(time, k = 30) +
+                   s(populationsize, k = 10) +
+                   s(influence, by = gender, k = 20) +
+                   gender,
+                 family = "binomial", method = "REML",
+                 data = trailer2)
+```
+
+```{r gam diagnostics, message = FALSE, warning = FALSE}
+summary(hashtag_gam)
+gam.check(hashtag_gam, old.style = TRUE)
+concurvity(hashtag_gam)
+```
+
+```{r define visreg functions, message = FALSE, warning = FALSE}
+visreg_twitter_time <- function(data, x, by) {
+  visreg(data, x, by = by,
+       scale="response", overlay=TRUE, partial=FALSE, band=TRUE, legend=FALSE,
+       ylim=c(0,1), xlim=c(0,365), plot = FALSE)
+}
+
+visreg_twitter_timeHT <- function(data, x, by) {
+  visreg(data, x, by = by,
+       scale="response", overlay=TRUE, partial=FALSE, band=TRUE, legend=FALSE,
+       ylim=c(0,1), xlim=c(0,234), plot = FALSE)
+}
+
+visreg_twitter_timeHTQ <- function(data, x, by) {
+  visreg(data, x, by = by,
+       scale="response", overlay=TRUE, partial=FALSE, band=TRUE, legend=FALSE,
+       ylim=c(0,1), xlim=c(0,313), plot = FALSE)
+}
+
+visreg_twitter_populationsize <- function(data, x, by) {
+  visreg(data, x, by = by,
+       scale="response", overlay=TRUE, partial=FALSE, band=TRUE, legend=FALSE,
+       ylim=c(0,1), xlim=c(4.21,6.34), plot = FALSE)
+}
+
+visreg_twitter_populationsizeQ <- function(data, x, by) {
+  visreg(data, x, by = by,
+       scale="response", overlay=TRUE, partial=FALSE, band=TRUE, legend=FALSE,
+       ylim=c(0,1), xlim=c(2.670,6.532), plot = FALSE)
+}
+
+visreg_twitter_influence <- function(data, x, by) {
+  visreg(data, x, by = by,
+       scale="response", overlay=TRUE, partial=FALSE, band=TRUE, legend=FALSE,
+       ylim=c(0,1), xlim=c(-1.4,9.4), plot = FALSE)
+  }
+```
+
+```{r visreg plots, message = FALSE, warning = FALSE}
+hashtag_v1 <- visreg_twitter_timeHT(hashtag_gam, "time", "gender")
+hashtag_v2 <- visreg_twitter_populationsize(hashtag_gam, "populationsize", "gender")
+hashtag_v3 <- visreg_twitter_influence(hashtag_gam, "influence", "gender")
+
+email_v1 <- visreg_twitter_time(email_gam, "time", "gender")
+email_v2 <- visreg_twitter_populationsize(email_gam, "populationsize", "gender")
+email_v3 <- visreg_twitter_influence(email_gam, "influence", "gender")
+
+cloud_v1 <- visreg_twitter_time(cloud_gam, "time", "gender")
+cloud_v2 <- visreg_twitter_populationsize(cloud_gam, "populationsize", "gender")
+cloud_v3 <- visreg_twitter_influence(cloud_gam, "influence", "gender")
+
+trailer_v1 <- visreg_twitter_time(trailer_gam, "time", "gender")
+trailer_v2 <- visreg_twitter_populationsize(trailer_gam, "populationsize", "gender")
+trailer_v3 <- visreg_twitter_influence(trailer_gam, "influence", "gender")
+```
+
+```{r Plotting function with TIME, message = FALSE, warning = FALSE}
+gg_time <- function(visreg, xlimits, xbreaks, xlabels) {
+  ggplot(visreg$fit, aes(time, visregFit,
+                         linetype = factor(gender), fill = factor(gender),
+                         color = factor(gender), size = factor(gender))) +
+  geom_line() +
+  geom_ribbon(aes(ymin = visregLwr, ymax = visregUpr), alpha=0.3, linetype=1, size=0.2) +
+  labs(x = "Time in years", y = "Probability of use", fill = "Gender", linetype = "Gender", color = "Gender", size = "Gender") +
+  scale_size_manual(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female"),
+                    values = c(1.25,1.25,1.25)) +
+  scale_linetype_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_fill_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_color_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_x_continuous(limits = xlimits, breaks = xbreaks, labels = xlabels) +
+  scale_y_continuous(limits = c(0,1), breaks = c(0,0.25,0.5,0.75,1),
+                     labels = c("0",".25",".50",".75","1")) +
+  theme(text = element_text(family = "Times"),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right",
+        strip.background = element_rect(fill = "white"),
+        panel.background = element_rect(fill = 'white', color = 'black'),
+        panel.grid.major = element_line(color = "grey95"),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(fill = "NA"))
+  }
+```
+
+```{r Plotting function with TIME, message = FALSE, warning = FALSE}
+gg_populationsize <- function(visreg, xlimits, xbreaks, xlabels) {
+  ggplot(visreg$fit, aes(populationsize, visregFit,
+                         linetype = factor(gender), fill = factor(gender),
+                         color = factor(gender), size = factor(gender))) +
+  geom_line() +
+  geom_ribbon(aes(ymin = visregLwr, ymax = visregUpr), alpha=0.3, linetype=1, size=0.2) +
+  labs(x = "Population size", y = "Probability of use", fill = "Gender", linetype = "Gender", color = "Gender", size = "Gender") +
+  scale_size_manual(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female"),
+                    values = c(1.25,1.25,1.25)) +
+  scale_linetype_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_fill_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_color_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_x_continuous(limits = xlimits, breaks = xbreaks, labels = xlabels) +
+  scale_y_continuous(limits = c(0,1), breaks = c(0,0.25,0.5,0.75,1),
+                     labels = c("0",".25",".50",".75","1")) +
+  theme(text = element_text(family = "Times"),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right",
+        strip.background = element_rect(fill = "white"),
+        panel.background = element_rect(fill = 'white', color = 'black'),
+        panel.grid.major = element_line(color = "grey95"),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(fill = "NA"))
+  }
+```
+
+```{r Plotting function with TIME, message = FALSE, warning = FALSE}
+gg_influence <- function(visreg, xlimits, xbreaks, xlabels) {
+  ggplot(visreg$fit, aes(influence, visregFit,
+                         linetype = factor(gender), fill = factor(gender),
+                         color = factor(gender), size = factor(gender))) +
+  geom_segment(aes(x = -1.4, xend = 4, y = 1, yend = 1), color = "blue") +
+  geom_segment(aes(x = 4, xend = 6, y = 1, yend = 1), color = "purple") +
+  geom_segment(aes(x = 6, xend = 9.4, y = 1, yend = 1), color = "red") +
+  annotate(geom = "text", x = 1, y = .95, label = "crowd", color = "blue",
+             angle = 0, size = 3) +
+  annotate(geom = "text", x = 5, y = .95, label = "broadcasters", color = "purple",
+             angle = 0, size = 3) +
+  annotate(geom = "text", x = 8, y = .95, label = "influentials", color = "red",
+             angle = 0, size = 3) +
+  geom_line() +
+  geom_ribbon(aes(ymin = visregLwr, ymax = visregUpr), alpha=0.3, linetype=1, size=0.2) +
+  labs(x = "Influence score", y = "Probability of use", fill = "Gender", linetype = "Gender", color = "Gender", size = "Gender") +
+  scale_size_manual(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female"),
+                    values = c(1.25,1.25,1.25)) +
+  scale_linetype_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_fill_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_color_discrete(name = "Gender",
+                          breaks = c("M","F"),
+                          labels = c("Male","Female")) +
+  scale_x_continuous(limits = xlimits, breaks = xbreaks, labels = xlabels) +
+  scale_y_continuous(limits = c(0,1), breaks = c(0,0.25,0.5,0.75,1),
+                     labels = c("0",".25",".50",".75","1")) +
+  theme(text = element_text(family = "Times"),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right",
+        strip.background = element_rect(fill = "white"),
+        panel.background = element_rect(fill = 'white', color = 'black'),
+        panel.grid.major = element_line(color = "grey95"),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(fill = "NA"))
+  }
+```
+
+
+```{r plot visreg 1, message = FALSE, warning = FALSE}
+xlimits_time <- c(0,365)
+xbreaks_time <- c(0,52,104,156,208,260,312,365)
+xlabels_time <- c("2010","2011","2012","2013","2014","2015","2016","2017")
+
+xlimits_timeHT <- c(0,234)
+xbreaks_timeHT <- c(0,26,78,130,182,234)
+xlabels_timeHT <- c("7/2012","2013","2014","2015","2016","2017")
+
+xlimits_timeHTQ <- c(0,313)
+xbreaks_timeHTQ <- c(0,52,104,156,208,260,313)
+xlabels_timeHTQ <- c("2011","2012","2013","2014","2015","2016","2017")
+
+xlimits_populationsize <- c(4.2,6.35)
+xbreaks_populationsize <- c(4.2,4.7,5,5.3,5.68,6.35)
+xlabels_populationsize <- c("20,000","50,000","100,000","200,000","500,000","2,000,000")
+
+xlimits_populationsizeQ <- c(2.670,6.532)
+xbreaks_populationsizeQ <- c(2.670,3.9,4.3,5,5.9,6.532)
+xlabels_populationsizeQ <- c("500","10,000","20,000","100,000","700,000","3,400,000")
+
+xlimits_influence <- c(-1.4,9.4)
+xbreaks_influence <- c(-1.4,0,2,4,6,8,9.4)
+xlabels_influence <- c("-2","0","2","4","6","8","10")
+
+hashtag_g1 <- gg_time(hashtag_v1, xlimits_timeHT, xbreaks_timeHT, xlabels_timeHT) +
+  geom_vline(xintercept = 29, color = "red") +
+  annotate(geom = "text", x = 21, y = 0.5, label = "prescription time", color = "red",
+             angle = 90)
+hashtag_g2 <- gg_populationsize(hashtag_v2, xlimits_populationsize, xbreaks_populationsize, xlabels_populationsize)
+hashtag_g3 <- gg_influence(hashtag_v3, xlimits_influence, xbreaks_influence, xlabels_influence)
+
+email_g1 <- gg_time(email_v1, xlimits_time, xbreaks_time, xlabels_time)
+email_g2 <- gg_populationsize(email_v2, xlimits_populationsize, xbreaks_populationsize, xlabels_populationsize)
+email_g3 <- gg_influence(email_v3, xlimits_influence, xbreaks_influence, xlabels_influence)
+
+cloud_g1 <- gg_time(cloud_v1, xlimits_time, xbreaks_time, xlabels_time) +
+  geom_vline(xintercept = 23, color = "red") +
+  annotate(geom = "text", x = 15, y = 0.7, label = "prescription time", color = "red",
+             angle = 90)
+cloud_g2 <- gg_populationsize(cloud_v2, xlimits_populationsize, xbreaks_populationsize, xlabels_populationsize)
+cloud_g3 <- gg_influence(cloud_v3, xlimits_influence, xbreaks_influence, xlabels_influence)
+
+trailer_g1 <- gg_time(trailer_v1, xlimits_time, xbreaks_time, xlabels_time) +
+  geom_vline(xintercept = 30, color = "red") +
+  annotate(geom = "text", x = 22, y = 0.8, label = "prescription time", color = "red",
+             angle = 90)
+trailer_g2 <- gg_populationsize(trailer_v2, xlimits_populationsize, xbreaks_populationsize, xlabels_populationsize)
+trailer_g3 <- gg_influence(trailer_v3, xlimits_influence, xbreaks_influence, xlabels_influence)
+```
+
+```{r save plots, message = FALSE, warning = FALSE}
+ggsave(hashtag_g1, filename = "Figure-hashtag-time.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(hashtag_g2, filename = "Figure-hashtag-populationsize.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(hashtag_g3, filename = "Figure-hashtag-influence.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(email_g1, filename = "Figure-email-time.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(email_g2, filename = "Figure-email-populationsize.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(email_g3, filename = "Figure-email-influence.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(cloud_g1, filename = "Figure-cloud-time.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(cloud_g2, filename = "Figure-cloud-populationsize.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(cloud_g3, filename = "Figure-cloud-influence.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(trailer_g1, filename = "Figure-trailer-time.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(trailer_g2, filename = "Figure-trailer-populationsize.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(trailer_g3, filename = "Figure-trailer-influence.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+```
+
+```{r influence histogram, message = FALSE, warning = FALSE}
+twitter_df2 <- twitter_df %>%
+  mutate(influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(lexical, populationsize, author, influence, followers, following, posts)
+```
+
+```{r influence histogram plot, message = FALSE, warning = FALSE}
+influence_histogram <- ggplot(twitter_df2, aes(x = influence,
+                         color = lexical, fill = lexical)) +
+  geom_density(breaks = seq(-1,10, by = 1),
+               alpha = 0.4) +
+  geom_segment(aes(x = -1.4, xend = 4, y = 0.4, yend = 0.4), color = "blue") +
+  geom_segment(aes(x = 4, xend = 6, y = 0.4, yend = 0.4), color = "purple") +
+  geom_segment(aes(x = 6, xend = 9.4, y = 0.4, yend = 0.4), color = "red") +
+  annotate(geom = "text", x = 1, y = .38, label = "crowd", color = "blue",
+             angle = 0, size = 3) +
+  annotate(geom = "text", x = 5, y = .38, label = "broadcasters", color = "purple",
+             angle = 0, size = 3) +
+  annotate(geom = "text", x = 8, y = .38, label = "influentials", color = "red",
+             angle = 0, size = 3) +
+  labs(x = "Influence score", y = "Distribution", color = "Lexical concept", fill = "Lexical concept") +
+  scale_x_continuous(limits = xlimits_influence, breaks = xbreaks_influence,
+                     labels = xlabels_influence) +
+  theme(text = element_text(family = "Times"),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 10),
+        legend.text = element_text(size = 10),
+        legend.position = "right",
+        strip.background = element_rect(fill = "white"),
+        panel.background = element_rect(fill = 'white', color = 'black'),
+        panel.grid.major = element_line(color = "grey95"),
+        panel.grid.minor = element_blank(),
+        panel.border = element_rect(fill = "NA"))
+```
+
+```{r populationsize histogram plot, message = FALSE, warning = FALSE}
+populationsize_histogram <- ggplot(twitter_df2, aes(x = populationsize,
+                         color = lexical, fill = lexical)) +
+  geom_density(breaks = seq(-1,10, by = 1),
+               alpha = 0.4) +
+  labs(x = "Population size", y = "Distribution", color = "Lexical item", fill = "Lexical item",
+       title = "\n\n") +
+  scale_x_continuous(limits = xlimits_populationsize, breaks = xbreaks_populationsize,
+                     labels = xlabels_populationsize) +
+  theme(text = element_text(size = 12, family = "Times"),
+  legend.position = "bottom",
+  strip.background = element_rect(fill = "white"),
+  panel.background = element_rect(fill = 'white', color = 'black'),
+  panel.grid.major = element_line(color = "grey95"),
+  panel.grid.minor = element_blank(),
+  panel.border = element_rect(fill = "NA"))
+```
+
+```{r save influence plot, message = FALSE, warning = FALSE}
+ggsave(influence_histogram, filename = "Figure-influenceHistogram.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+```
+##Diffusion map of the prescribed term 'mot-dièse'
+
+```{r prescribed hashtag diffusion, warning =  FALSE, message = FALSE}
+hashtag_dif <- hashtag %>%
+  select(borrow_type, date, city, lon, lat, citysize, population) %>%
+  filter(!is.na(city), borrow_type == "prescribed",
+         date > ymd_hms("2013-01-22 00:00:00"),
+         date < ymd_hms("2013-01-24 00:00:00")) %>%
+  group_by(city) %>%
+  filter(date == min(date)) %>%
+  ungroup() %>%
+  mutate(time = as.numeric(difftime(date, min(date), units = "hours")),
+         timecat = ifelse(time >= 3, "3 hours or more",
+                          ifelse(time >= 2, "from 2 to 3 hours",
+                                 ifelse(time >= 1, "from 1 to 2 hours",
+                                        "in 1 hour"))),
+         citylabel = ifelse(city %in% c("Paris","Bordeaux","Toulouse","Marseille","Lyon","Nantes","Lille","Montpellier","Strasbourg","La Rochelle","Calais","Biarritz","Brest","Poitier","Vichy","Tarbes","Mulhouse"), as.character(city), ""),
+         time = time + 1,
+         time2 = log10(time),
+         population2 = log10(population))
+
+
+hashtag_dif$timecat <-  as.factor(ordered(hashtag_dif$timecat, levels = c('in 1 hour','from 1 to 2 hours','from 2 to 3 hours','3 hours or more')))
+```
+
+```{r gam pop, message = FALSE, warning = FALSE}
+gamdiff <- gam(population2 ~ s(time2, k = 5), method = "REML", data = hashtag_dif)
+gamdiff_v <- visreg(gamdiff, "time2")
+```
+
+```{r simple plot diffusion, message = FALSE, warning = FALSE}
+gg_hashtagDiff <- ggplot(hashtag_dif, aes(x = time2, y = population2, color = citysize)) +
+  geom_point() + geom_smooth(method = "lm", color = "red") +
+  labs(x = "Time", y = "Population", color = "") +
+  scale_color_manual(values = citycolors) +
+  scale_x_continuous(limits = c(0,1.27),
+                     breaks = c(0, 0.3, 0.48, 0.6, 1.27),
+                     labels = c("First", "1 hr","2 hrs","3 hrs","Last")) +
+  scale_y_continuous(limits = c(4.2, 6.35),
+                     breaks = c(4.2, 4.39, 4.76, 5.02, 5.34, 6.35),
+                     labels = c("> 10,000 people","> 20,000 people","> 50,000 people","> 100,000 people","> 200,000 people","> 2,000,000 people")) +
+  theme(text = element_text(size = 10, family = "Times"),
+        legend.position = "none",
+        legend.text = element_text(size = 9),
+        axis.text = element_text(size = 10),
+        panel.grid.major = element_line(color = "grey95"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white"),
+        strip.text = element_text(size = 10),
+        panel.background = element_rect(fill = 'white', color = 'black'),
+        panel.border = element_rect(fill = "NA"))
+```
+
+```{r save diffplot, message = FALSE, warning, FALSE}
+ggsave(gg_hashtagDiff, filename = "Figure-hashtag-diffusionplot.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+```
+
+```{r diff2, message = FALSE, warning = FALSE}
+hashtag_dif2 <- hashtag_dif %>%
+  mutate(time2 = as.numeric(difftime(date, max(date), units = "hours")),
+         time2 = round(time2^2) + 1)
+
+hashtag_dif2 <- hashtag_dif2[rep(seq(nrow(hashtag_dif2)), hashtag_dif2$time2),]
+hashtag_dif2$randomnumber = runif(nrow(hashtag_dif2), min = 0.001, max =0.01)
+
+hashtag_dif2 <- hashtag_dif2 %>%
+  mutate(lon = lon + randomnumber,
+         lat = lat + randomnumber)
+```
+
+```{r dff, message = FALSE, warning = FALSE}
+cityshapes <- c("3"=15, "4"=15, "5"=17, "6"=17, "7"=19, "8"=19)
+city_size <- c("3"=0.5, "4"=1, "5"=2, "6"=3, "7"=4, "8"=6)
+citycolors <- c("3"="black", "4"="magenta", "5"="blue", "6"="orange", "7"="purple", "8"="red")
+timecatcolors <- c('under 1 hour'="red",'1 hour'="magenta",'2 hours'="purple",'3 hours or more'="blue")
+```
+
+```{r hashtag diffusion density first 6 hours, message = FALSE, warning = FALSE}
+hashtag_dif_map <- france + geom_point(data = hashtag_dif,
+                                     aes(x = lon, y = lat, size = citysize, color = citysize)) +
+#  geom_density2d(data = hashtag_dif, aes(x = lon,y = lat),bins = 8, size = 0.5) +
+#  stat_density_2d(data = hashtag_dif2, aes(x = lon, y = lat, fill = stat(level)), geom = "polygon") +
+# scale_fill_viridis_c()
+  scale_size_manual(values = city_size, name = "Population size",
+                    labels = c("3"="> 10,000 people",
+                               "4"="> 20,000 people",
+                               "5"="> 50,000 people",
+                               "6"="> 100,000 people",
+                               "7"="> 200,000 people",
+                               "8"="> 2,000,000 people")) +
+  scale_color_manual(values = citycolors, name = "Population size",
+                     labels = c("3"="> 10,000 people",
+                               "4"="> 20,000 people",
+                               "5"="> 50,000 people",
+                               "6"="> 100,000 people",
+                               "7"="> 200,000 people",
+                               "8"="> 2,000,000 people")) +
+  facet_grid(cols = vars(timecat)) +
+  labs(x = "longitude", y = "latitude", shape = "", color = "") +
+  geom_text_repel(data = hashtag_dif, aes(x = lon, y = lat, label = citylabel), size = 3) +
+  theme(text = element_text(size = 10, family = "Times"),
+  legend.position = "bottom",
+  legend.text = element_text(size = 9),
+  panel.grid.major = element_line(color = "grey95"),
+  panel.grid.minor = element_blank(),
+  strip.background = element_rect(fill = "white"),
+  strip.text = element_text(size = 10),
+  panel.background = element_rect(fill = 'white', color = 'black'),
+  panel.border = element_rect(fill = "NA"))
+```
+
+```{r save mapss, message = FALSE, warning = FALSE}
+ggsave(hashtag_dif_map, filename = "Figure-hashtag-diffusionmap.png",
+       width = 6.5, height = 3,  units = "in",
+       family = "Times")
+```
+
+#QUEBEC
+
+```{r import quebec data, warning = FALSE, message = FALSE}
+hashtag_quebec_import <- read_excel("/Users/gyuszi/Dropbox/Research/Twitter/02 PhD Research/hashtag-quebec.xlsx")
+
+#quebec_cities <- hashtag_quebec_import %>% select(city, region) %>%
+#  filter(!city == "Pembroke") %>%
+#  mutate(city = as.factor(city),
+#         region = as.factor(region)) %>%
+#  group_by(region, city) %>%
+#  count() %>%
+#  filter(!is.na(city), !is.na(region)) %>%
+#  unite("city", c("city","region"), sep = ", ") %>%
+#  mutate(city = paste(city, "Canada", sep = ", "),
+#         city = as.factor(city),
+#         city = as.character(city)) %>%
+#  mutate_geocode(city) %>%
+#  separate(city, c("city","region","country"), sep = ", ") %>%
+#  mutate(city = relevel(as.factor(city), ref = "Montréal")) %>%
+#  select(city, region, country, lon, lat)
+
+#population_quebec <- read_excel("/Users/gyuszi/Dropbox/Research/Twitter/02 PhD Research/quebec_population.xlsx") %>%
+#  select(city, population, citysize) %>%
+#  mutate(city = relevel(as.factor(city), ref = "Montréal"),
+#         citysize = factor(ordered(citysize, levels = c('small','medium','large'))))
+
+#quebec_cities <- quebec_cities %>%
+#  full_join(population_quebec, by = "city")
+
+#save(quebec_cities, file = "quebec_cities.Rda")
+load("quebec_cities.Rda")
+
+hashtag_quebec <- hashtag_quebec_import %>%
+  filter(!city == "Pembroke") %>%
+  select(lexical, borrow_type, date, content, city, sentiment, gender, posts, followers, following) %>%
+  mutate(lexical = as.factor(lexical),
+         borrow_type = as.factor(borrow_type),
+         city = as.factor(city),
+         sentiment = as.factor(ordered(sentiment,
+                                       levels=c('Basic Negative',
+                                                'Basic Neutral',
+                                                'Basic Positive'))),
+         sentiment = recode(sentiment, 'Basic Negative' = "negative",
+                            'Basic Neutral' = "neutral",
+                            'Basic Positive' = "positive"),
+         gender = relevel(as.factor(gender), ref = "M")) %>%
+  full_join(quebec_cities, by = "city") %>%
+  mutate(country = as.factor(country),
+         region = as.factor(region),
+         city = relevel(as.factor(city), ref = "Montréal"))
+```
+
+```{r prepare quebec hashtag gam, message = FALSE, warning = FALSE}
+hashtag_quebec2 <- hashtag_quebec %>%
+  filter(!borrow_type == "motdiese", date > ymd_hms("2011-01-01 00:00:00")) %>%
+  mutate(date = floor_date(date, "week"),
+         time = factor(as.numeric(difftime(date, min(date), units = "weeks")),
+           levels = c(0:365)),
+         time = as.numeric(as.character(time)),
+         influence = log10(((followers + 1) / (following + 1)) * (posts + 1)),
+         populationsize = log10(population)) %>%
+  select(time, borrow_type, populationsize, gender, influence)
+```
+
+```{r quebec hashtag gam, message = FALSE, warning =  FALSE}
+hashtag_quebec_gam <- gam(borrow_type ~ s(time, k = 30) +
+                   s(populationsize, k = 10) +
+                   s(influence, by = gender, k = 20) +
+                   gender,
+                 family = "binomial", method = "REML",
+                 data = hashtag_quebec2)
+```
+
+```{r hashtag gam visualization quebec, warning = FALSE, message = FALSE}
+hashtagQ_v1 <- visreg_twitter_timeHTQ(hashtag_quebec_gam, "time", "gender")
+hashtagQ_v2 <- visreg_twitter_populationsizeQ(hashtag_quebec_gam, "populationsize", "gender")
+hashtagQ_v3 <- visreg_twitter_influence(hashtag_quebec_gam, "influence", "gender")
+
+hashtagQ_g1 <- gg_time(hashtagQ_v1, xlimits_timeHTQ, xbreaks_timeHTQ, xlabels_timeHTQ) +
+  geom_vline(xintercept = 8, color = "red") +
+  annotate(geom = "text", x = 0, y = 0.5, label = "prescription time", color = "red",
+             angle = 90)
+hashtagQ_g2 <- gg_populationsize(hashtagQ_v2, xlimits_populationsizeQ, xbreaks_populationsizeQ, xlabels_populationsizeQ)
+hashtagQ_g3 <- gg_influence(hashtagQ_v3, xlimits_influence, xbreaks_influence, xlabels_influence)
+```
+
+```{r save plots ht q, warning=FALSE, message=FALSE}
+ggsave(hashtagQ_g1, filename = "Figure-hashtag-quebec-time.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(hashtagQ_g2, filename = "Figure-hashtag-quebec-populationsize.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+
+ggsave(hashtagQ_g3, filename = "Figure-hashtag-quebec-influence.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+```
+
+```{r prescribed hashtag diffusion quebec, warning =  FALSE, message = FALSE}
+hashtag_quebec_dif <- hashtag_quebec %>%
+  select(borrow_type, date, city, lon, lat, citysize, population) %>%
+  filter(!is.na(city), borrow_type == "prescribed",
+         date > ymd_hms("2011-01-01 00:00:00")) %>%
+  group_by(city) %>%
+  filter(date == min(date)) %>%
+  ungroup() %>%
+  mutate(time = as.numeric(difftime(date, min(date), units = "weeks")),
+         timecat = ifelse(time >= 52, "1 year or more",
+                          ifelse(time >= 12, "from 3 to 12 months",
+                                 ifelse(time >= 4, "from 1 to 3 months",
+                                        "in 1 month"))),
+         citylabel = ifelse(city %in% c("Montréal","Québec","Sherbrooke","Baie-Comeau","Trois-Rivières","Joliette","Sept-Iles","Cap-Chat","Amos","Victoriaville"), as.character(city), ""),
+         time = time + 1,
+         time2 = log10(time),
+         population2 = log10(population))
+
+hashtag_quebec_dif$timecat <-  as.factor(ordered(hashtag_quebec_dif$timecat, levels = c('in 1 month','from 1 to 3 months','from 3 to 12 months','1 year or more')))
+```
+
+
+```{r simple plot diffusion, message = FALSE, warning = FALSE}
+gg_hashtag_quebec_Diff <- ggplot(hashtag_quebec_dif, aes(x = time2, y = population2, color = citysize)) +
+  geom_point() + geom_smooth(method = "lm", color = "purple") +
+  labs(x = "Time", y = "Population", color = "") +
+  scale_color_manual(values = citycolors_QU) +
+  scale_x_continuous(limits = c(0,2.48),
+                     breaks = c(0, 0.9, 1.15, 1.77, 2.48),
+                     labels = c("First", "1 mo","3 mo","1 year","Last")) +
+  scale_y_continuous(limits = c(3.11, 6.54),
+                     breaks = c(3.11, 4.57, 5.02),
+                     labels = c("> 1,000 people","> 30,000 people","> 100,000 people")) +
+  theme(text = element_text(size = 10, family = "Times"),
+        legend.position = "none",
+        legend.text = element_text(size = 9),
+        axis.text = element_text(size = 10),
+        panel.grid.major = element_line(color = "grey95"),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill = "white"),
+        strip.text = element_text(size = 10),
+        panel.background = element_rect(fill = 'white', color = 'black'),
+        panel.border = element_rect(fill = "NA"))
+```
+
+```{r save diffplot, message = FALSE, warning, FALSE}
+ggsave(gg_hashtag_quebec_Diff, filename = "Figure-hashtag-quebec-diffusionplot.png",
+       width = 5.5, height = 3,  units = "in",
+       family = "Times")
+```
+
+```{r dff, message = FALSE, warning = FALSE}
+cityshapes_QU <- c("small"=17, "medium"=19, "large"=19)
+city_size_QU <- c("small"=1, "medium"=3, "large"=5)
+citycolors_QU <- c("small"="black", "medium"="blue", "large"="red")
+```
+
+```{r hashtag diffusion density first 6 hours, message = FALSE, warning = FALSE}
+hashtag_quebec_dif_map <- quebec + geom_point(data = hashtag_quebec_dif,
+                                     aes(x = lon, y = lat, size = citysize, color = citysize)) +
+#  geom_density2d(data = hashtag_quebec_dif, aes(x = lon,y = lat),bins = 8, size = 0.5) +
+  scale_size_manual(values = city_size_QU, name = "Population size",
+                    labels = c("small"="> 1,000 people",
+                               "medium"="> 30,000 people",
+                               "large"="> 100,000 people")) +
+  scale_color_manual(values = citycolors_QU, name = "Population size",
+                     labels = c("small"="> 1,000 people",
+                               "medium"="> 30,000 people",
+                               "large"="> 100,000 people")) +
+  facet_grid(cols = vars(timecat)) +
+  labs(x = "longitude", y = "latitude", shape = "", color = "") +
+  geom_text_repel(data = hashtag_quebec_dif, aes(x = lon, y = lat, label = citylabel), size = 3) +
+  theme(text = element_text(size = 10, family = "Times"),
+  legend.position = "bottom",
+  legend.text = element_text(size = 10),
+  panel.grid.major = element_line(color = "grey95"),
+  panel.grid.minor = element_blank(),
+  strip.background = element_rect(fill = "white"),
+  strip.text = element_text(size = 10),
+  panel.background = element_rect(fill = 'white', color = 'black'),
+  panel.border = element_rect(fill = "NA"))
+```
+
+```{r save mapss, message = FALSE, warning = FALSE}
+ggsave(hashtag_quebec_dif_map, filename = "Figure-hashtag-quebec-diffusionmap.png",
+       width = 6.5, height = 3,  units = "in",
+       family = "Times")
+```
+
+```{r}
+hashtag2 <- hashtag %>%
+  select(borrow_type, date, city, lon, lat) %>%
+  mutate(date = format(as.Date(date, format = "%Y-%m-%d"), "%Y"),
+         date = as.numeric(date)) %>%
+  filter(date == 2013 | date == 2014 | date == 2015 | date == 2016) %>%
+  mutate(date = as.factor(date),
+         date = recode(date, "2013" = "first",
+                       "2014" = "second",
+                       "2015" = "third",
+                       "2016"="fourth")) %>%
+  select(borrow_type, date, city) %>%
+  group_by(city, borrow_type, date) %>%
+  summarize(n = n()) %>%
+  filter(!is.na(city)) %>%
+  ungroup() %>%
+  complete(city, borrow_type, date,
+           fill = list(n = 0)) %>%
+  spread(borrow_type, n) %>%
+  mutate(preprop = prescribed / (prescribed + english),
+         preprop = replace_na(preprop, 0),
+         preprop2 = ifelse(preprop >= 1, "100%",
+                          ifelse(preprop >= .75, "50-75%",
+                                 ifelse(preprop >= .5, "25-50%",
+                                        ifelse(preprop >= .25, "0-25%", "0%")))),
+         preprop2 = as.factor(ordered(preprop2, levels = c("0%","0-25%","25-50%","50-75%","100%")))) %>%
+  full_join(cities, by = "city")
+```
+
+```{r}
+percent_colors <- c("0%"="black","0-25%"="blue","25-50%"="purple","50-75%"="orange","100%"="red")
+change_france <- "Figure 3. Percentage share of the prescribed variant in France over time"
+facet_namesFR <- c("first"="2013", "second" = "2014", "third" = "2015", "fourth"="2016")
+percent_size <- c("0%" = 2, "0-25%" = 4, "25-50%" = 6, "50-75%" = 8, "100%" = 10)
+
+france_points <- france + geom_point(data = hashtag_france,
+                                     aes(x = lon, y = lat,
+                                         size = preprop2,
+                                         color = preprop2)) +
+  scale_color_manual(values = percent_colors) +
+  scale_size_manual(values = percent_size) +
+  facet_wrap(~date, labeller = as_labeller(facet_namesFR)) +
+  labs(x = "longitude", y = "latitude", title = change_france, size = "", color = "") +
+  theme(text = element_text(size = 10.5, family = "Times"),
+  legend.position = "bottom",
+  panel.grid.major = element_line(color = "grey95"),
+  panel.grid.minor = element_blank(),
+  strip.background = element_rect(fill = "white"),
+  panel.background = element_rect(fill = 'white', color = 'black'),
+  panel.border = element_rect(fill = "NA"))
+```
+
+```{r}
+hashtag_france_2013 <- hashtag_france %>% filter(date == "first")
+hashtag_france_2014 <- hashtag_france %>% filter(date == "second")
+hashtag_france_2015 <- hashtag_france %>% filter(date == "third")
+hashtag_france_2016 <- hashtag_france %>% filter(date == "fourth")
+```
+
+```{r}
+percent_map <- function(map, data, colorsize, colorTitle = "", sizeTitle = "", labelSize = 1, Title = "", themeTitle = element_blank(), legendPosition = "none") {
+  map + geom_point(data = data, aes(x = lon, y = lat,
+                                      size = colorsize,
+                                      color = colorsize)) +
+    scale_color_manual(values = percent_colors) +
+    scale_size_manual(values = percent_size) +
+    labs(title = Title, color = colorTitle, size = colorTitle) +
+    theme(title = themeTitle,
+          axis.text = element_blank(),
+          legend.position = legendPosition,
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          plot.margin = unit(c(0, 0, 0, 0), 'lines')) +
+    xlab('') +
+    ylab('')
+    }
+```
+
+```{r}
+htPercent_fr13 <- percent_map(france, hashtag_france_2013, hashtag_france_2013$preprop2, colorTitle = "Percentage share", sizeTitle = "Percentage share",labelSize = 1, Title = "Percentage share of 'mot-dièse' in 2013", themeTitle = element_text(size = 10), legendPosition = "right")
+htPercent_cr13 <- percent_map(corsica, hashtag_france_2013, hashtag_france_2013$preprop2)
+htPercent_re13 <- percent_map(reunion, hashtag_france_2013, hashtag_france_2013$preprop2)
+htPercent_my13 <- percent_map(mayotte, hashtag_france_2013, hashtag_france_2013$preprop2)
+htPercent_gd13 <- percent_map(guadeloupe, hashtag_france_2013, hashtag_france_2013$preprop2)
+htPercent_mr13 <- percent_map(martinique, hashtag_france_2013, hashtag_france_2013$preprop2)
+htPercent_gy13 <- percent_map(guyanefr, hashtag_france_2013, hashtag_france_2013$preprop2)
+```
+
+```{r, warning = FALSE, message = FALSE}
+htPercent_fr16 <- percent_map(france, hashtag_france_2016, hashtag_france_2016$preprop2, colorTitle = "Percentage share", sizeTitle = "Percentage share",labelSize = 1, Title = "Percentage share of 'mot-dièse' in 2016", themeTitle = element_text(size = 10), legendPosition = "right")
+htPercent_cr16 <- percent_map(corsica, hashtag_france_2016, hashtag_france_2016$preprop2)
+htPercent_re16 <- percent_map(reunion, hashtag_france_2016, hashtag_france_2016$preprop2)
+htPercent_my16 <- percent_map(mayotte, hashtag_france_2016, hashtag_france_2016$preprop2)
+htPercent_gd16 <- percent_map(guadeloupe, hashtag_france_2016, hashtag_france_2016$preprop2)
+htPercent_mr16 <- percent_map(martinique, hashtag_france_2016, hashtag_france_2016$preprop2)
+htPercent_gy16 <- percent_map(guyanefr, hashtag_france_2016, hashtag_france_2016$preprop2)
+```
+
+```{r, warning = FALSE, message = FALSE}
+ggsave(filename = "htPercent2013.pdf",
+       width = 6.5, height = 7,  units = "in",
+       family = "Times",
+       arrangeGrob(grobs = list(htPercent_fr13, htPercent_cr13,
+                                htPercent_re13, htPercent_my13,
+                                htPercent_gd13, htPercent_mr13,
+                                htPercent_gy13),
+                   layout_matrix = laymatx))
+
+ggsave(filename = "htPercent2016.pdf",
+       width = 6.5, height = 7,  units = "in",
+       family = "Times",
+       arrangeGrob(grobs = list(htPercent_fr16, htPercent_cr16,
+                                htPercent_re16, htPercent_my16,
+                                htPercent_gd16, htPercent_mr16,
+                                htPercent_gy16),
+                   layout_matrix = laymatx))
+```
+
+```{r Mot-dièse diffusion, message = FALSE, warning = FALSE}
+htFRdiffusion <- twitter_df %>%
+  mutate(borrow_type = recode(borrow_type,
+                              prescribed = "prescribed",
+                              alternative = "english",
+                              english = "english")) %>%
+  filter(lexical == "hashtag", borrow_type == "prescribed", !is.na(city), date > ymd_hms("2013-01-01 00:00:00"), date < ymd_hms("2013-01-24 00:00:00")) %>%
+  group_by(city) %>%
+  summarize(firstTime = min(date),
+            firstContent = content[which.min(date)],
+            firstAuthor = author[which.min(date)],
+            firstSentiment = sentiment[which.min(date)],
+            firstKlout = klout[which.min(date)],
+            firstGender = gender[which.min(date)],
+            lon = lon[which.min(date)],
+            lat = lat[which.min(date)],
+            population = population[which.min(date)],
+            borrow_type = borrow_type[which.min(date)]) %>%
+  mutate(diff_Time = as.numeric(difftime(firstTime, min(firstTime), units = "hours"))) %>%
+  filter(diff_Time < 24) %>%
+  mutate(diff_TimeCut = cut(diff_Time, breaks = seq(-0.00001,24,1),
+                            labels = seq(1:24)),
+         diffTime_cat = ifelse(diff_TimeCut == 1, "in 1 hour",
+                               ifelse(diff_TimeCut == 2, "in 2 hours",
+                                      ifelse(diff_TimeCut == 3, "in 3 hours",
+                                             ifelse(diff_TimeCut == 4, "in 4 hours","over 4 hours")))),
+         diffTime_cat = as.factor(diffTime_cat),
+         diff_TimeCut = factor(as.numeric(diff_TimeCut), levels = c(1:24)),
+         ParisLon = lon[which(city == "Paris")],
+         ParisLat = lat[which(city == "Paris")],
+         distanceParis = distHaversine(cbind(ParisLon, ParisLat), cbind(lon, lat)),
+         distanceParis = distanceParis / 1000,
+         distanceParis_cat = cut(distanceParis, breaks = seq(-0.1,10100,100),
+                                 labels = sprintf("over %d km",
+                                                   seq(0,10000,100))),
+         distanceParis_cat = recode(distanceParis_cat,
+                                    "over 0 km" = "under 100 km",
+                                    "over 800 km" = "around 900 km",
+                                    "over 900 km" = "around 900 km",
+                                    "over 6700 km" = "over 6000 km",
+                                    "over 6800 km" = "over 6000 km",
+                                    "over 7000 km" = "over 6000 km",
+                                    "over 9300 km" = "over 6000 km"),
+         distanceParis_cat = as.factor(ordered(distanceParis_cat)),
+         citysize = ifelse(population > 2000000, 8,
+                           ifelse(population > 200000, 7,
+                                  ifelse(population > 100000, 6,
+                                         ifelse(population > 50000, 5,
+                                                ifelse(population > 20000, 4,
+                                                       ifelse(population > 10000, 3,
+                                                              ifelse(population > 5000, 2,
+                                                                     ifelse(population > 2000, 1, 0)))))))),
+         citysize = as.factor(ordered(citysize))) %>%
+  select(borrow_type, city, lon, lat, firstTime, diff_TimeCut, diffTime_cat, distanceParis, distanceParis_cat, population, citysize)
+```
+
+Create heatmap using France's map. Use purple to color.
+Use `facet_wrap` to separate maps based on 4 hours period in 2 columns.
+Legend is not needed, as the heatmap represents only the cluster density of cities.
+
+```{r Heatmap mot-dièse diffusion, message = FALSE}
+diffusioncolors <- brewer.pal(n = 5, name = "Accent")
+
+htFRdiffusion_heat <- htFRdiffusion %>%
+  slice(rep(1:n(), times = 2)) %>%
+  mutate(v = (seq(1:n()))/100000,
+         lon = v + lon,
+         lat = v + lat)
+
+htFRdiffusionMAP_fr <- france + geom_density2d(data=htFRdiffusion, aes(x=lon, y=lat, color = diff_TimeCut), bins = 2, size = 2)
+htFRdiffusionMAP_fr <- htFRdiffusionMAP_fr + coord_map()
+htFRdiffusionMAP_fr <- htFRdiffusionMAP_fr + geom_label_repel(data = htFRdiffusion, aes(x = lon, y = lat, label = city, fill = diff_TimeCut), fontface = "bold", size = 3)
+htFRdiffusionMAP_fr <- htFRdiffusionMAP_fr + scale_color_manual(values = diffusioncolors)
+htFRdiffusionMAP_fr <- htFRdiffusionMAP_fr + scale_fill_manual(values = diffusioncolors)
+htFRdiffusionMAP_fr <- htFRdiffusionMAP_fr +
+  labs(title = "Diffusion", color = "Time", fill = "Time")
+htFRdiffusionMAP_fr <- htFRdiffusionMAP_fr + theme(
+  title = element_text(size = 10),
+  axis.text = element_blank(),
+  legend.position = "right",
+  axis.line = element_blank(),
+  axis.ticks = element_blank(),
+  plot.margin = unit(c(0, 0, 0, 0), 'lines')) +
+  xlab('') +
+  ylab('')
+```
+
+```{r, message = FALSE, warning = FALSE}
+diffusionmap <- function(map, data, colorFill, colorTitle = "", labelSize = 2.8, Title = "", themeTitle = element_blank(), legendPosition = "none") {
+  map + geom_density2d(data = data, aes(x = lon,
+                                        y = lat,
+                                        color = colorFill),
+                       bins = 2, size = 2) +
+    coord_map() +
+    geom_label_repel(data = data, aes(x = lon,
+                                      y = lat,
+                                      label = city,
+                                      fill = colorFill),
+                     fontface = "bold", size = labelSize) +
+    scale_color_manual(values = brewer.pal(n = 5, name = "Accent")) +
+    scale_fill_manual(values = brewer.pal(n = 5, name = "Accent")) +
+    labs(title = Title, color = colorTitle, fill = colorTitle) +
+    theme(title = themeTitle,
+          axis.text = element_blank(),
+          legend.position = legendPosition,
+          axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          plot.margin = unit(c(0, 0, 0, 0), 'lines')) +
+    xlab('') +
+    ylab('')
+}
+
+htFRdiffusionMAP_fr <- diffusionmap(france, htFRdiffusion, htFRdiffusion$diff_TimeCut, colorTitle = "Time", labelSize = 3, Title = "Diffusion of 'mot-dièse' in the first 24 hours", themeTitle = element_text(size = 10), legendPosition = "right")
+htFRdiffusionMAP_cr <- diffusionmap(corsica, htFRdiffusion, htFRdiffusion$diff_TimeCut)
+htFRdiffusionMAP_re <- diffusionmap(reunion, htFRdiffusion, htFRdiffusion$diff_TimeCut)
+htFRdiffusionMAP_my <- diffusionmap(mayotte, htFRdiffusion, htFRdiffusion$diff_TimeCut)
+htFRdiffusionMAP_gd <- diffusionmap(guadeloupe, htFRdiffusion, htFRdiffusion$diff_TimeCut)
+htFRdiffusionMAP_mr <- diffusionmap(martinique, htFRdiffusion, htFRdiffusion$diff_TimeCut)
+htFRdiffusionMAP_gy <- diffusionmap(guyanefr, htFRdiffusion, htFRdiffusion$diff_TimeCut)
+
+#htFRdiffusionMAP_fr
+```
+
+```{r Save mot-dièse diffusion map, message = FALSE, warning = FALSE}
+ggsave(filename = "DiffusionBB.pdf",
+       width = 6.5, height = 7,  units = "in",
+       family = "Times",
+       arrangeGrob(grobs = list(htFRdiffusionMAP_fr, htFRdiffusionMAP_cr,
+                                htFRdiffusionMAP_re, htFRdiffusionMAP_my,
+                                htFRdiffusionMAP_gd, htFRdiffusionMAP_mr,
+                                htFRdiffusionMAP_gy),
+                   layout_matrix = laymatx))
+```
+
+```{r}
+hashtag <- twitter_df %>%
+  filter(lexical == "hashtag") %>%
+  filter(!is.na(posts) | !is.na(followers) | ! is.na(following)) %>%
+  mutate(posts = posts + 1,
+         followers = followers + 1,
+         following = following + 1,
+         influence = followers / following,
+         influence2 = log10(influence * posts))
+
+ht_influence$cat <- ifelse(ht_influence$influence >= mean(data.matrix(ht_influence[ht_influence$influence>median(ht_influence$influence),"influence"])) & ht_influence$posts >= median(ht_influence$posts), "influentials",
+                      ifelse(ht_influence$influence >= median(ht_influence$influence) & ht_influence$posts >= median(ht_influence$posts), "broadcasters","crowd"))) %>%
+  select(borrow_type, time, content, city, distanceParis_cat, citysize, gender, klout) %>%
+  rename(population = citysize,
+         ParisDistance = distanceParis_cat)
+```
+
+```{r, message = FALSE, warning = FALSE}
+htFRdiffusion_gam_df <- twitter_df %>%
+  mutate(borrow_type = recode(borrow_type,
+                              prescribed = "prescribed",
+                              alternative = "english",
+                              english = "english")) %>%
+  filter(lexical == "hashtag", borrow_type == "prescribed", !is.na(city), date > ymd_hms("2013-01-01 00:00:00"), date < ymd_hms("2013-01-24 00:00:00")) %>%
+  mutate(diff_Time = as.numeric(difftime(date, min(date), units = "hours"))) %>%
+  filter(diff_Time < 24) %>%
+  mutate(diff_TimeCut = cut(diff_Time, breaks = seq(-0.00001,24,1),
+                            labels = seq(1:24)),
+         diff_TimeCut = factor(as.numeric(diff_TimeCut), levels = c(1:24)),
+         distanceParis = distHaversine(cbind(2.3522219,48.85661), cbind(lon, lat)),
+         distanceParis = distanceParis / 1000,
+         distanceParis_cat = cut(distanceParis, breaks = seq(-0.1,10100,100),
+                                 labels = sprintf("over %d km",
+                                                   seq(0,10000,100))),
+         distanceParis_cat = recode(distanceParis_cat,
+                                    "over 0 km" = "under 100 km",
+                                    "over 800 km" = "around 900 km",
+                                    "over 900 km" = "around 900 km",
+                                    "over 6700 km" = "over 6000 km",
+                                    "over 6800 km" = "over 6000 km",
+                                    "over 7000 km" = "over 6000 km",
+                                    "over 9300 km" = "over 6000 km"),
+         distanceParis_cat = as.factor(ordered(distanceParis_cat)),
+         citysize = ifelse(population > 2000000, 8,
+                           ifelse(population > 200000, 7,
+                                  ifelse(population > 100000, 6,
+                                         ifelse(population > 50000, 5,
+                                                ifelse(population > 20000, 4,
+                                                       ifelse(population > 10000, 3,
+                                                              ifelse(population > 5000, 2,
+                                                                     ifelse(population > 2000, 1, 0)))))))),
+         citysize = as.factor(ordered(citysize))) %>%
+  select(city, diff_TimeCut, distanceParis_cat, citysize) %>%
+  complete(diff_TimeCut, distanceParis_cat, citysize) %>%
+  mutate(diff_TimeCut = as.numeric(as.character(diff_TimeCut)),
+         diffusion = ifelse(is.na(city), 0, 1)) %>%
+  rename(time = diff_TimeCut,
+        ParisDistance = distanceParis_cat,
+        population = citysize) %>%
+  select(time, city, diffusion, ParisDistance, population)
+
+save(htFRdiffusion_gam_df, file = "hashtag_diffusion.Rda")
+load("hashtag_diffusion.Rda")
+```
+
+```{r Diffusion GAM, message = FALSE, warning = FALSE}
+htFRdiffusion_gam1 <- gam(diffusion ~ s(time, k = 24),
+                         select = TRUE, family = "binomial",
+                         data = htFRdiffusion_gam_df)
+
+htFRdiffusion_gam2 <- gam(diffusion ~ s(time, by = ParisDistance, k = 24),
+                         select = TRUE, family = "binomial",
+                         data = htFRdiffusion_gam_df)
+
+htFRdiffusion_gam3 <- gam(diffusion ~ s(time, by = population, k = 24),
+                         select = TRUE, family = "binomial",
+                         data = htFRdiffusion_gam_df)
+
+htFRdiffusion_gam4 <- gam(diffusion ~ s(time, by = ParisDistance, k = 24) +
+                            s(time, by = population, k = 24),
+                         select = TRUE, family = "binomial",
+                         data = htFRdiffusion_gam_df)
+```
+
+```{r GAM diagnostics, message = FALSE, warning = FALSE}
+summary(htFRdiffusion_gam1)
+gam.check(htFRdiffusion_gam1, old.style = TRUE)
+concurvity(htFRdiffusion_gam1)
+
+summary(htFRdiffusion_gam2)
+gam.check(htFRdiffusion_gam2, old.style = TRUE)
+concurvity(htFRdiffusion_gam2)
+
+summary(htFRdiffusion_gam3)
+gam.check(htFRdiffusion_gam3, old.style = TRUE)
+concurvity(htFRdiffusion_gam3)
+
+summary(htFRdiffusion_gam4)
+gam.check(htFRdiffusion_gam4, old.style = TRUE)
+concurvity(htFRdiffusion_gam4)
+```
+
+```{r}
+visreg(htFRdiffusion_gam4, "time", by = "population",
+       scale="response", overlay=TRUE, partial=FALSE, band=FALSE, legend=TRUE,
+       ylim=c(0,1), xlab="", ylab="", cex.axis=1.5,
+       main="") 
+```
+
+```{r percentage, message = FALSE}
+ht_use_fr <- twitter_df %>%
+  filter(lexical == "hashtag", borrow_type == "prescribed", date > ymd_hms("2013-01-01 00:00:00")) %>%
+  filter(!is.na(city)) %>%
+  mutate(date = as.factor(floor_date(date, unit = "day"))) %>%
+  group_by(city) %>%
+  count(city, by = date, lat, lon) %>%
+  rename(date = by,
+         fr_count = n)
+  
+ht_use_en <- twitter_df %>%
+  filter(lexical== "hashtag", borrow_type == "english", date > ymd_hms("2013-01-01 00:00:00")) %>%
+  filter(!is.na(city)) %>%
+  mutate(date = as.factor(floor_date(date, unit = "day"))) %>%
+  group_by(city) %>%
+  count(city, by = date, lat, lon) %>%
+  rename(date = by,
+         en_count = n)
+
+ht_use <- ht_use_fr %>%
+  full_join(ht_use_en, by = c("date","city","lat","lon")) %>%
+  mutate(en_count = replace_na(en_count, 0),
+         fr_count = replace_na(fr_count, 0),
+         FRpercent = 100 * (fr_count / (fr_count + en_count)),
+         FRpercent2 = cut(FRpercent, breaks = seq(-0.00001,101,24.9999),
+                          labels = c("0-24%","25-49%","50-74%","75-100%")),
+         FRpercent2 = replace_na(FRpercent2, "75-100%"),
+         FRpercent2 = as.factor(ordered(FRpercent2, levels = c("0-24%","25-49%","50-74%","75-100%"))),
+         date = ymd(date))
+
+ht_use_heat <- ht_use_fr %>%
+  filter(city != "Paris") %>%
+  slice(rep(1:n(), times = as.integer(fr_count))) %>%
+  mutate(v = (seq(1:n()))/100000,
+         lon = v + lon,
+         lat = v + lat)
+```
+
+```{r, message = FALSE, warning = FALSE}
+htFRpercentageGIF_fr <- france + stat_density2d(data=ht_use_heat, aes(x=lon, y=lat, fill=..level.., alpha=..level..), geom="polygon", size=0.01, bins=5)
+htFRpercentageGIF_fr <- htFRpercentageGIF_fr + scale_fill_gradient(low = "green", high = "red", limits = c(0, 0.2))
+htFRpercentageGIF_fr <- htFRpercentageGIF_fr + scale_alpha(range=c(0.5, 1), guide=FALSE)
+htFRpercentageGIF_fr <- htFRpercentageGIF_fr + coord_map()
+htFRpercentageGIF_fr <- htFRpercentageGIF_fr + geom_point(data = ht_use_heat, aes(x=lon, y=lat))
+#htFRpercentageGIF_fr <- htFRpercentageGIF_fr + geom_label_repel(data = ht_use_heat, aes(x = lon, y = lat, label = city), fontface = "bold", size = 3)
+htFRpercentageGIF_fr <- htFRpercentageGIF_fr + labs(title = 'First 24 hours: {frame_time}') +
+  transition_time(date) +
+  ease_aes('linear')
+```
+
+```{r Influential users, message = FALSE, warning = FALSE}
+hashtag_influence <- hashtag %>%
+  mutate(year = as.factor(ordered(year(date)))) %>%
+  select(author,year,posts,followers,following) %>%
+  group_by(author, year) %>%
+  filter(followers == max(followers)) %>%
+  distinct(posts,followers,following) %>%
+  mutate(influence = ifelse(((1 + followers) / (1 + following)) >= mean(((1 + followers) / (1 + following)), na.rm = TRUE) & posts >= median(posts, na.rm = TRUE), "influentials",
+                            ifelse(((1 + followers) / (1 + following)) < mean(((1 + followers) / (1 + following)), na.rm = TRUE) & posts >= median(posts, na.rm = TRUE), "broadcasters", "crowd")),
+         influence = as.factor(influence))
+```
+
+```{r Influential users, message = FALSE, warning = FALSE}
+ht_influence <- hashtag %>%
+  filter(!is.na(followers) | !is.na(following)) %>%
+  mutate(year = as.factor(year(date))) %>%
+  select(borrow_type, year, author, posts, followers, following) %>%
+  group_by(author, borrow_type, year) %>%
+  summarize(posts = max(posts),
+            followers = 1 + followers[which.max(posts)],
+            following = 1 + following[which.max(posts)]) %>%
+  mutate(influence = followers / following)
+
+ht_influence$category <- ifelse(ht_influence$influence >= mean(data.matrix(ht_influence[ht_influence$influence>median(ht_influence$influence),"influence"])) & ht_influence$posts >= median(ht_influence$posts), "influentials",
+                      ifelse(ht_influence$influence >= median(ht_influence$influence) & ht_influence$posts >= median(ht_influence$posts), "broadcasters","crowd"))
+```
+
+```{r}
+borrowtype_lab <- c("english"="hashtag","prescribed"="mot-dièse")
+date_lab <- c("2013"="2013","2014"="2014","2015"="2015","2016"="2016")
+
+
+htInfluencePLOT <- ggplot(data = ht_influence, aes(x = influence, y = posts, color = cat)) + geom_point() +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+   labels = trans_format("log10", scales::math_format(10^.x))) +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+   labels = trans_format("log10", scales::math_format(10^.x))) +
+  facet_grid(borrow_type ~ date,
+             labeller = labeller(borrow_type = borrowtype_lab,
+                                 date = date_lab)) +
+  geom_vline(xintercept = median(ht_influence$influence), color = "black") +
+  geom_vline(xintercept = mean(data.matrix(ht_influence[ht_influence$influence>median(ht_influence$influence),"influence"])), color = "red") +
+  geom_hline(yintercept = median(ht_influence$posts), color = "red") +
+  labs(x = "Followers / Following", y = "Tweets", title = "Relation between number of tweets and the ratio of Followers and Followings",
+       color = "User category") +
+  theme(title = element_text(size = 10),
+  axis.text = element_text(size = 9), axis.title = element_text(size = 12),
+  strip.text = element_text(size = 12), legend.position = "bottom",
+  panel.grid.major = element_line(color = "grey95"),
+  panel.grid.minor = element_blank(),
+  strip.background = element_rect(fill = "white"),
+  panel.background = element_rect(fill = 'white', color = 'black'))
+```
+
+```{r save plot}
+ggsave(filename = "InfluenceHashtag.pdf",
+       width = 6.5, height = 5, units = "in",
+       family = "Times")
+```
+
+```{r Generalized Additive Models, }
+htgam_df <- twitter_df %>%
+  filter(lexical == "hashtag", date > ymd_hms("2012-10-01 00:00:00")) %>%
+  mutate(date = floor_date(date, "day"),
+         time = factor(as.numeric(
+           difftime(date, min(date), units = "days")),
+           levels = c(0:1552)),
+         time = as.numeric(as.character(time)),
+         borrow_type = as.factor(as.character(borrow_type)),
+         influence = log10(posts * (followers / following))) %>%
+  select(borrow_type, time, city, sentiment, gender, posts, followers, following, influence) %>%
+  filter(!is.na(influence), !is.infinite(influence))
+```
+
+```{r, message = FALSE, warning = FALSE}
+medianinf <- median(htgam_df$influence)
+broadcasters <- median()
+influencecolors <- ifelse(htgam_df$influence > medianinf, "green", "red")
+
+ggplot(data = htgam_df, aes(x = followers, y = posts)) + geom_point() +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+   labels = trans_format("log10", scales::math_format(10^.x))) +
+  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
+   labels = trans_format("log10", scales::math_format(10^.x))) +
+  geom_vline(xintercept = 100, color = "red") +
+  geom_hline(yintercept = 100, color = "red")
+
+influence_dist <- ggplot(data = htgam_df, aes(x = influence, fill = influencecolors)) +
+  geom_histogram() +
+  geom_vline(xintercept = medianinf, color = "green")
+```
+
+
+```{r GAM models, message = FALSE, warning = FALSE}
+htgam1 <- gam(borrow_type ~ s(time), family = "binomial",
+              select = TRUE, data = htgam_df)
+
+htgam2 <- gam(borrow_type ~ s(time) + gender, family = "binomial",
+              select = TRUE, data = htgam_df)
+
+htgam3 <- gam(borrow_type ~ s(time) + city, family = "binomial",
+              select = TRUE, data = htgam_df)
+
+htgam4 <- gam(borrow_type ~ s(time) + gender + city, family = "binomial",
+              select = TRUE, data = htgam_df)
+
+htgam5 <- gam(borrow_type ~ s(time) + gender + city + sentiment, family = "binomial",
+              select = TRUE, data = htgam_df)
+
+htgam6 <- gam(borrow_type ~ s(time) + s(influence), family = "binomial",
+              select = TRUE, data = htgam_df)
+
+htgam7 <- gam(borrow_type ~ s(time) + s(influence) + gender + city + sentiment, family = "binomial",
+              select = TRUE, data = htgam_df)
+```
+
+```{r}
+#Diagnostics about the fitted model
+summary(htgam4) #Deviance explained: the higher, the better
+concurvity(htgam4) #s(Time) close to 0
+gam.check(htgam4, old.style=TRUE) #k-index over 1
+
+visreg(htgam7,"influence", by = "borrow_type", breaks = "prescribed",
+       scale="response", overlay=TRUE, partial=FALSE, band=TRUE, legend=TRUE,
+       ylim=c(0,1), xlab="", ylab="", cex.axis=1.5,
+       main="")
+```
+
