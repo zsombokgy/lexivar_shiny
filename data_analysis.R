@@ -1,5 +1,3 @@
-#This file contains codes for data processing in Chapter 4
-
 #Read in libraries
 library(readr)
 library(tidyverse)
